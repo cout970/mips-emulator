@@ -7,16 +7,17 @@ public class Main {
 
 	public static void main(String[] args){
 		registerInstructions();
-		CPU main = new CPU();
-		main.startPC();
-		while(true){
-			main.advance();
-			try {
-				Thread.sleep(50);
-			} catch (InterruptedException e) {
-				e.printStackTrace();
-			}
-		}
+		Ventana.init();
+//		CPU main = new CPU();
+//		main.startPC();
+//		while(true){
+//			main.advance();
+//			try {
+//				Thread.sleep(50);
+//			} catch (InterruptedException e) {
+//				e.printStackTrace();
+//			}
+//		}
 	}
 
 	private static void registerInstructions() {
