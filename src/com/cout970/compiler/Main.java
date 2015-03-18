@@ -21,28 +21,34 @@ public class Main {
 	}
 
 	private static void registerInstructions() {
-		new Instruction("sll",0x0,InstrucType.R);
-		new Instruction("srl",0x2,InstrucType.R);
-		new Instruction("sra",0x3,InstrucType.R);
-		new Instruction("sllv",0x4,InstrucType.R);
-		new Instruction("srlv",0x6,InstrucType.R);
-		new Instruction("srav",0x7,InstrucType.R);
-		new Instruction("addi",0x8,InstrucType.I);
-		new Instruction("addiu",0x9,InstrucType.I);
-		new Instruction("andi",0xc,InstrucType.I);
-		new Instruction("ori",0xd,InstrucType.I);
-		new Instruction("xori",0xe,InstrucType.I);
-		new Instruction("mult",0x18,InstrucType.R);
-		new Instruction("multu",0x19,InstrucType.R);
-		new Instruction("div",0x1a,InstrucType.R);
-		new Instruction("divu",0x1b,InstrucType.R);
-		new Instruction("add",0x20,InstrucType.R);
-		new Instruction("addu",0x21,InstrucType.R);
-		new Instruction("sub",0x22,InstrucType.R);
-		new Instruction("subu",0x23,InstrucType.R);
-		new Instruction("and",0x24,InstrucType.R);
-		new Instruction("or",0x25,InstrucType.R);
-		new Instruction("xor",0x26,InstrucType.R);
-		new Instruction("nor",0x27,InstrucType.R);
+		//opcode == 0
+		new Instruction("sll",0x0,InstrucType.R,3);
+		new Instruction("srl",0x2,InstrucType.R,3);
+		new Instruction("sra",0x3,InstrucType.R,3);
+		new Instruction("sllv",0x4,InstrucType.R,3);
+		new Instruction("srlv",0x6,InstrucType.R,3);
+		new Instruction("srav",0x7,InstrucType.R,3);
+		new Instruction("jr",0x8,InstrucType.R,1);
+		new Instruction("jalr",0x9,InstrucType.R,1);
+		new Instruction("mfhi",0xa,InstrucType.R,1);
+		
+		new Instruction("mult",0x18,InstrucType.R,3);
+		new Instruction("multu",0x19,InstrucType.R,3);
+		new Instruction("div",0x1a,InstrucType.R,3);
+		new Instruction("divu",0x1b,InstrucType.R,3);
+		new Instruction("add",0x20,InstrucType.R,3);
+		new Instruction("addu",0x21,InstrucType.R,3);
+		new Instruction("sub",0x22,InstrucType.R,3);
+		new Instruction("subu",0x23,InstrucType.R,3);
+		new Instruction("and",0x24,InstrucType.R,3);
+		new Instruction("or",0x25,InstrucType.R,3);
+		new Instruction("xor",0x26,InstrucType.R,3);
+		new Instruction("nor",0x27,InstrucType.R,3);
+		//opcode != 0
+		new Instruction("addi",0x8,InstrucType.I,3);
+		new Instruction("addiu",0x9,InstrucType.I,3);
+		new Instruction("andi",0xc,InstrucType.I,3);
+		new Instruction("ori",0xd,InstrucType.I,3);
+		new Instruction("xori",0xe,InstrucType.I,3);
 	}
 }

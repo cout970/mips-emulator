@@ -235,10 +235,12 @@ public class CPU {
 			setRegister(target, a >> b);
 			break;
 		case 0x8://jr
+			//TODO
 			regPC &= 0xF0000000;
 			regPC |= (instruct & 0x3FFFFFF) << 2;
 			break;
 		case 0x9://jalr
+			//TODO
 			setRegister(31, regPC);
 			regPC &= 0xF0000000;
 			regPC |= (instruct & 0x3FFFFFF) << 2;
