@@ -9,34 +9,53 @@ import com.cout970.compiler.Instruction.InstrucType;
 
 public class AssemblyCompiler implements ActionListener{
 
+	private List<Runtime> methods = new ArrayList<Runtime>();
+	private String main;
+
 	@Override
 	public void actionPerformed(ActionEvent e) {
 		List<Integer> program = new ArrayList<Integer>();
 		List<String> toCode = new ArrayList<String>();
 		
 		String code = Ventana.text.getText();
-		String[] subcodes = code.split('\13'+"");
-		String[] aux,aux2;
+		String[] subcodes = code.split(""+'\13');
 		String line;
 		int instr = 0;
 		
 		for(int l = 0; l<subcodes.length; l++){
 			line = subcodes[l];
 			line = line.trim();
-			aux = line.split(" ");
-			for(int i=0;i<aux.length;i++){
-				aux2 = aux[i].split(",");
-				for(int j=0;j<aux2.length;j++){
-					toCode.add(aux2[j]);
-				}
-			}
+			split(line,toCode);
+			
 			instr = procesLine(toCode,l);
 			program.add(Integer.valueOf(instr));
 			toCode.clear();
 			instr = 0;
 		}
+		
+		postProces(program);
+		System.out.println("Compiled Code:");
 		for(Integer i : program){
 			System.out.println(Integer.toHexString(i));
+		}
+	}
+
+	private void split(String line, List<String> toCode) {
+		String[] aux,aux2;
+		aux = line.split(" ");
+		for(int i=0;i<aux.length;i++){
+			aux2 = aux[i].split(",");
+			for(int j=0;j<aux2.length;j++){
+				toCode.add(aux2[j]);
+			}
+		}
+	}
+
+	private void postProces(List<Integer> program) {
+		for(Runtime r : methods){
+			if(main == r.name){
+				program.set(r.line, 0x08000000 & r.line);
+			}
 		}
 	}
 
@@ -44,11 +63,37 @@ public class AssemblyCompiler implements ActionListener{
 		Instruction instr;
 		int HexCode = 0;
 		int d,s,t;
-		instr = getInstruction(toCode.get(0));
-		if(instr == null){
-			System.out.println("Error compiling at "+l+" line");
-			System.out.println("Invalid operation: "+toCode.get(0));
+		String in = toCode.get(0).trim();
+		if(in.startsWith(".")){
+			System.out.println(in.length()+" "+(".text".length()));
+			for(int i = 0;i<in.length();i++){
+				System.out.println(in.charAt(i));
+			}
+			if(in.equals(".text")){
+				System.out.println("text mode");
+				return 0;
+			}
+			if(in.equals(".globl")){
+				System.out.println("global");
+				if(toCode.size() == 1){
+					System.out.println("Error compiling at "+l+" line");
+					System.out.println("Mising main runtime");
+					return 0;
+				}
+				main = toCode.get(1);
+			}
 			return 0;
+		}
+		instr = getInstruction(in);
+		if(instr == null){
+			if(in.endsWith(":")){
+				methods.add(new Runtime(toCode.get(1).replace(":", ""),l));
+				return 0;
+			}else{
+				System.out.println("Error compiling at "+l+" line");
+				System.out.println("Invalid operation: "+in);
+				return 0;
+			}
 		}
 		if(instr.tipe == InstrucType.R){
 			d = Integer.parseInt(toCode.get(1));

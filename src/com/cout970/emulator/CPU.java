@@ -37,10 +37,10 @@ public class CPU {
 	}
 	
 	public void writeWord(int pos, int dato){
-		writeByte(pos  , (byte) (dato & 0x000000FF));
-		writeByte(pos+1, (byte) ((dato & 0x0000FF00) >> 8));
-		writeByte(pos+2, (byte) ((dato & 0x00FF0000) >> 16));
-		writeByte(pos+3, (byte) ((dato & 0xFF000000) >> 24));
+		writeByte(pos+3, (byte) (dato & 0x000000FF));
+		writeByte(pos+2, (byte) ((dato & 0x0000FF00) >> 8));
+		writeByte(pos+1, (byte) ((dato & 0x00FF0000) >> 16));
+		writeByte(pos  , (byte) ((dato & 0xFF000000) >> 24));
 	}
 	
 	public boolean isRunning(){
@@ -89,13 +89,12 @@ public class CPU {
 	
 
 	public int CONTROL(int instruct) {
-		if(instruct == 0)return -1;
+		if(instruct == 0)return -1;//no action
 		if(instruct == 0x0000000c)return 3;//syscall
 		int opcode = ((instruct & 0xFC000000) >> 26);
-		if(opcode == 0)return 0;
-		if(opcode >= 0x2 && opcode <= 0x7)return 1;
-		
-		return 2;
+		if(opcode == 0)return 0;//ALU
+		if(opcode == 0x2 || opcode == 0x3)return 1;//tipe j
+		return 2;//tipe i
 	}
 	
 	public void SysCall() {
@@ -152,13 +151,34 @@ public class CPU {
 	}
 
 	private void TipeI(int instruct) {
-		int target,source,data,code;
+		int target,source,code;
+		short data;
 		long aux = 0,aux2 = 0;
 		code = (instruct & 0xFC000000) >> 26;
 		target = (instruct & 0x1F0000) >> 16;
 		source = (instruct & 0x3E00000) >> 21;
-		data = instruct & 0xFFFF;
+		data = (short) (instruct & 0xFFFF);
 		switch(code){
+		case 0x4://beq
+			if(getRegister(source) == getRegister(target)){
+				regPC += (int)data << 2;
+			}
+			break;
+		case 0x5://bne
+			if(getRegister(source) == getRegister(target)){
+				regPC += (int)data << 2;
+			}
+			break;
+		case 0x6://blez
+			if(getRegister(source) <= 0){
+				regPC += (int)data << 2;
+			}
+			break;
+		case 0x7://bgtz
+			if(getRegister(source) > 0){
+				regPC += (int)data << 2;
+			}
+			break;
 		case 0x8://addi
 			aux = data + getRegister(source); 
 			setRegister(target, (int) aux);
@@ -167,6 +187,14 @@ public class CPU {
 			aux |= getRegister(source);
 			aux2 = data;
 			setRegister(target , (int)(aux + aux2));
+			break;
+		case 0xa://slti
+			aux2 = data;
+			setRegister(target, (getRegister(source) < aux2) ? 1 : 0);
+			break;
+		case 0xb://sltiu
+			aux2 = (data & 0xFFFF);
+			setRegister(target, (getRegister(source) < aux2) ? 1 : 0);
 			break;
 		case 0xc://andi
 			aux = getRegister(target) & data;
@@ -179,6 +207,40 @@ public class CPU {
 		case 0xe://xori
 			aux = getRegister(target) ^ data;
 			setRegister(target , (int)aux);
+			break;
+		case 0x18://llo
+			setRegister(target, (getRegister(target) & 0xFFFF0000) | data);
+			break;
+		case 0x19://lhi
+			setRegister(target, (getRegister(target) & 0xFFFF) | (data << 16));
+			break;
+		case 0x1a://trap
+			SysCall();//no exactly but good for now
+			break;
+		case 0x20://lb
+			setRegister(target, readByte(getRegister(source)+data));
+			break;
+		case 0x21://lh
+			setRegister(target, (short)(readWord(getRegister(source)+data)));
+			break;
+		case 0x23://lw
+			setRegister(target, readWord(getRegister(source)+data));
+			break;
+		case 0x24://lbu
+			setRegister(target, readByte(getRegister(source)+data) & 0xFF);
+			break;
+		case 0x25://lhu
+			setRegister(target, readWord(getRegister(source)+data) & 0xFFFF);
+			break;
+		case 0x28://sb
+			writeByte(getRegister(source)+data, (byte)(getRegister(target) & 0xFF));
+			break;
+		case 0x29://sh
+			writeByte(getRegister(source)+data, (byte)(getRegister(target) & 0xFF));
+			writeByte(getRegister(source)+data+1, (byte)(getRegister(target) & 0xFF00));
+			break;
+		case 0x2b://sw
+			writeWord(getRegister(source)+data, getRegister(target));
 			break;
 		}
 	}
@@ -193,15 +255,6 @@ public class CPU {
 		case 0x3://jal
 			setRegister(31, regPC);
 			regPC += dir << 2;
-			break;
-		case 0x4://beq
-			
-			break;
-		case 0x5://bne
-			break;
-		case 0x6://blez
-			break;
-		case 0x7://bgtz
 			break;
 		}
 	}
@@ -235,15 +288,11 @@ public class CPU {
 			setRegister(target, a >> b);
 			break;
 		case 0x8://jr
-			//TODO
-			regPC &= 0xF0000000;
-			regPC |= (instruct & 0x3FFFFFF) << 2;
+			regPC = getRegister(a);
 			break;
 		case 0x9://jalr
-			//TODO
 			setRegister(31, regPC);
-			regPC &= 0xF0000000;
-			regPC |= (instruct & 0x3FFFFFF) << 2;
+			regPC = getRegister(a);
 			break;
 		case 0x10://mfhi
 			setRegister(target, HI);
@@ -323,6 +372,10 @@ public class CPU {
 			break;
 		}
 	}
+	
+	public int c2Converter(int value){
+		return ~value + 1;
+	}
 
 	public void setRegister(int s, int val) {
 		if(s==0)return;
@@ -335,12 +388,12 @@ public class CPU {
 
 	public void startPC() {
 		cpuCicles = 0;
-		writeWord(0, 0x20040012);
-		writeWord(4, 0x20020001);
-		writeWord(8, 0x0000000c);
-		writeWord(12, 0x00000000);
-		writeWord(16, 0x2002000a);
-		writeWord(20, 0x0000000c);
+//		writeWord(0, 0x20040012);
+//		writeWord(4, 0x20020001);
+//		writeWord(8, 0x0000000c);
+//		writeWord(12, 0x00000000);
+//		writeWord(16, 0x2002000a);
+//		writeWord(20, 0x0000000c);
 	}
 
 }
