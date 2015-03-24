@@ -1,5 +1,8 @@
 package com.cout970.emulator;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
 import java.util.Scanner;
 
 
@@ -12,17 +15,18 @@ public class CPU {
 	int HI = 0;
 	int LO = 0;
 	
-	public byte[] memory = new byte[8192];
+	public byte[] memory = new byte[8388608];//8Mb
 	
 	public int cpuCicles = -1;
 
 	public boolean waiting = false;;
 	
 	public int readWord(int pos){
-		int dato = (readByte(pos) & 0xFF);
-		dato |= (readByte(pos+1) & 0xFF) << 8;
-		dato |= (readByte(pos+2) & 0xFF) << 16;
-		dato |= (readByte(pos+3) & 0xFF) << 24;
+		int dato;
+		dato  = (readByte(pos+3) & 0xFF);
+		dato |= (readByte(pos+2) & 0xFF) << 8;
+		dato |= (readByte(pos+1) & 0xFF) << 16;
+		dato |= (readByte(pos  ) & 0xFF) << 24;
 		return dato;
 	}
 	
@@ -41,6 +45,22 @@ public class CPU {
 		writeByte(pos+2, (byte) ((dato & 0x0000FF00) >> 8));
 		writeByte(pos+1, (byte) ((dato & 0x00FF0000) >> 16));
 		writeByte(pos  , (byte) ((dato & 0xFF000000) >> 24));
+	}
+	
+	public static int getBitsFromInstruct(int inst, int start, int end,  boolean signed) {
+		if(start > end) {
+			int temp = end;
+			end = start;
+			start = temp;
+		}
+		int max = 0xFFFFFFFF;
+		int mask = (max >>> (31-end)) & (max << start);
+		inst = inst & mask;
+		if(signed) {
+			inst = inst << (31 - end);
+			return inst >> (start + (31-end));
+		}
+		return inst >>> start;
 	}
 	
 	public boolean isRunning(){
@@ -65,12 +85,14 @@ public class CPU {
 	}
 
 	public void advancePC() {
-		regPC = (regPC + 4) % 0x2000;
+		regPC = regPC + 4; 
+		if(regPC >= memory.length)regPC = 1024;
 	}
 
 	public void executeInsntruction() {
 		
 		int instruct = readWord(regPC);
+//		System.out.println(Integer.toHexString(instruct).toUpperCase());
 		advancePC();
 		switch(CONTROL(instruct)){
 		case 0:
@@ -81,17 +103,16 @@ public class CPU {
 			break;
 		case 2:
 			TipeI(instruct);
+			break;
 		case 3:
 			SysCall();
 		}
 	}
-	
-	
 
 	public int CONTROL(int instruct) {
 		if(instruct == 0)return -1;//no action
 		if(instruct == 0x0000000c)return 3;//syscall
-		int opcode = ((instruct & 0xFC000000) >> 26);
+		int opcode = getBitsFromInstruct(instruct, 26, 31, false);
 		if(opcode == 0)return 0;//ALU
 		if(opcode == 0x2 || opcode == 0x3)return 1;//tipe j
 		return 2;//tipe i
@@ -103,31 +124,42 @@ public class CPU {
 		case 10:
 			cpuCicles = -1;
 			break;
-		case 1:
+		case 1://print int
 			System.out.println(getRegister(4));
 			break;
-		case 2:
+		case 2://print float
 			System.out.println(floatRegistes[12]);
 			break;
-		case 3:
+		case 3://print double
 			double dou;
 			int aux1 = Float.floatToIntBits(floatRegistes[12]);
 			int aux2 = Float.floatToIntBits(floatRegistes[13]);
 			dou = (aux1 | (aux2 << 32));
 			System.out.println(dou);
 			break;
-		case 4:
+		case 4://print string
 			int dir = getRegister(4);
-			char[] string = new char[140];
-			for(int i=0;i<140;i++){
-				string[i] = (char)readByte(dir+i);
-				if(string[i] == '\0')break;
+			boolean stop = false;
+			while(!stop){
+				byte c = readByte(dir);
+				if(c == 0){
+					stop = true;
+					break;
+				}
+				System.out.print((char)(c));
+				dir++;
 			}
-			System.out.println(string);
 			break;
-		case 5:
+		case 5://read string
 			Scanner in = new Scanner(System.in);
-			setRegister(2, in.nextInt());
+			String input = in.nextLine();
+			int temp = 0;
+			try{
+				temp = Integer.parseInt(input);
+				setRegister(2, temp);
+			}catch(NumberFormatException e){
+				System.out.println("Invalid input");
+			}
 			break;
 		case 6:
 			Scanner in1 = new Scanner(System.in);
@@ -142,233 +174,287 @@ public class CPU {
 			break;
 		case 8:
 			Scanner in111 = new Scanner(System.in);
-			String s = in111.next();
+			String s = in111.nextLine();
 			for(int i=0;i<s.length();i++)
-				memory[2048+i]= (byte) s.charAt(i);
-			memory[2048+s.length()]= '\0';
+				memory[getRegister(4)+i]= (byte) s.charAt(i);
+			memory[getRegister(4)+s.length()]= '\0';
 			break;
 		}
 	}
 
 	private void TipeI(int instruct) {
-		int target,source,code;
-		short data;
-		long aux = 0,aux2 = 0;
-		code = (instruct & 0xFC000000) >> 26;
-		target = (instruct & 0x1F0000) >> 16;
-		source = (instruct & 0x3E00000) >> 21;
-		data = (short) (instruct & 0xFFFF);
-		switch(code){
+		int opcode, rs, rt, inmed,inmedU;
+		long m1 = 0,m2 = 0;
+		
+		opcode = getBitsFromInstruct(instruct, 26, 31, false);
+		rs = getBitsFromInstruct(instruct, 21, 25, false);
+		rt = getBitsFromInstruct(instruct, 16, 20, false);
+		inmed = getBitsFromInstruct(instruct, 0, 15, true);
+		inmedU = getBitsFromInstruct(instruct, 0, 15, false);
+		
+		switch(opcode){
+		case 0x1:
+			if(rt == 1){//bgez
+				if(getRegister(rs) >= 0){
+					regPC -= 4;
+					regPC += (inmed << 2);
+				}
+			}else if(rt == 0){//bltz
+				if(getRegister(rs) < 0){
+					regPC -= 4;
+					regPC += (inmed << 2);
+				}
+			}
+			break;
 		case 0x4://beq
-			if(getRegister(source) == getRegister(target)){
-				regPC += (int)data << 2;
+			if(getRegister(rt) == getRegister(rs)){
+//				regPC -= 4;
+				regPC += (inmed << 2);
 			}
 			break;
 		case 0x5://bne
-			if(getRegister(source) == getRegister(target)){
-				regPC += (int)data << 2;
+			if(getRegister(rt) != getRegister(rs)){
+//				regPC -= 4;
+				regPC += (inmed << 2);
 			}
 			break;
 		case 0x6://blez
-			if(getRegister(source) <= 0){
-				regPC += (int)data << 2;
+			if(getRegister(rs) <= 0){
+				regPC -= 4;
+				regPC += (inmed << 2);
 			}
 			break;
 		case 0x7://bgtz
-			if(getRegister(source) > 0){
-				regPC += (int)data << 2;
+			if(getRegister(rs) > 0){
+				regPC -= 4;
+				regPC += (inmed << 2);
 			}
 			break;
 		case 0x8://addi
-			aux = data + getRegister(source); 
-			setRegister(target, (int) aux);
+			setRegister(rt, getRegister(rs) + inmed);
 			break;
 		case 0x9://addiu
-			aux |= getRegister(source);
-			aux2 = data;
-			setRegister(target , (int)(aux + aux2));
+			setRegister(rt, getRegister(rs) + inmedU);
 			break;
 		case 0xa://slti
-			aux2 = data;
-			setRegister(target, (getRegister(source) < aux2) ? 1 : 0);
+			if(getRegister(rs) < inmed)
+				setRegister(rt, 1);
+			else
+				setRegister(rt, 0);
 			break;
 		case 0xb://sltiu
-			aux2 = (data & 0xFFFF);
-			setRegister(target, (getRegister(source) < aux2) ? 1 : 0);
+			m1 = getRegister(rs);
+			m2 = inmed;
+			m1 = (m1 << 32) >>> 32;
+			m2 = (m2 << 32) >>> 32;
+			if(m1 < m2)
+				setRegister(rt, 1);
+			else
+				setRegister(rt, 0);
 			break;
 		case 0xc://andi
-			aux = getRegister(target) & data;
-			setRegister(target , (int)aux);
+			setRegister(rt , getRegister(rs) & inmedU);
 			break;
 		case 0xd://ori
-			aux = getRegister(target) | data;
-			setRegister(target , (int)aux);
+			setRegister(rt , getRegister(rs) | inmedU);
 			break;
 		case 0xe://xori
-			aux = getRegister(target) ^ data;
-			setRegister(target , (int)aux);
+			setRegister(rt , getRegister(rs) ^ inmedU);
+			break;
+		case 0xf://lui
+			setRegister(rt, inmedU << 16);
 			break;
 		case 0x18://llo
-			setRegister(target, (getRegister(target) & 0xFFFF0000) | data);
+			setRegister(rt, (getRegister(rt) & 0xFFFF0000) | inmedU);
 			break;
 		case 0x19://lhi
-			setRegister(target, (getRegister(target) & 0xFFFF) | (data << 16));
+			setRegister(rt, (getRegister(rt) & 0x0000FFFF) | (inmedU << 16));
 			break;
+			
 		case 0x1a://trap
 			SysCall();//no exactly but good for now
 			break;
+			
 		case 0x20://lb
-			setRegister(target, readByte(getRegister(source)+data));
+			setRegister(rt, readByte(getRegister(rs)+inmed));
 			break;
 		case 0x21://lh
-			setRegister(target, (short)(readWord(getRegister(source)+data)));
+			setRegister(rt, (short)(readWord(getRegister(rs)+inmed)));
 			break;
 		case 0x23://lw
-			setRegister(target, readWord(getRegister(source)+data));
+			setRegister(rt, readWord(getRegister(rs)+inmed));
 			break;
 		case 0x24://lbu
-			setRegister(target, readByte(getRegister(source)+data) & 0xFF);
+			setRegister(rt, readByte(getRegister(rs)+inmed) & 0xFF);
 			break;
 		case 0x25://lhu
-			setRegister(target, readWord(getRegister(source)+data) & 0xFFFF);
+			setRegister(rt, readWord(getRegister(rs)+inmed) & 0xFFFF);
 			break;
 		case 0x28://sb
-			writeByte(getRegister(source)+data, (byte)(getRegister(target) & 0xFF));
+			writeByte(getRegister(rs)+inmed, (byte)(getRegister(rt) & 0xFF));
 			break;
 		case 0x29://sh
-			writeByte(getRegister(source)+data, (byte)(getRegister(target) & 0xFF));
-			writeByte(getRegister(source)+data+1, (byte)(getRegister(target) & 0xFF00));
+			writeByte(getRegister(rs)+inmed, (byte)(getRegister(rt) & 0xFF));
+			writeByte(getRegister(rs)+inmed+1, (byte)(getRegister(rt) & 0xFF00));
 			break;
 		case 0x2b://sw
-			writeWord(getRegister(source)+data, getRegister(target));
+			writeWord(getRegister(rs)+inmed, getRegister(rt));
 			break;
 		}
 	}
 
 	public void TipeJ(int instruct) {
-		int dir = instruct & 0x3FFFFFF;
-		int code = (instruct & 0xFC000000) >> 26;
+		int dir = getBitsFromInstruct(instruct, 0, 25, false);
+		int code = getBitsFromInstruct(instruct, 26, 31, false);
+		
 		switch(code){
 		case 0x2://j
-			regPC += dir << 2;
+			regPC -= 4;
+			regPC &= 0xF0000000;
+			regPC |= dir << 2;
 			break;
 		case 0x3://jal
 			setRegister(31, regPC);
-			regPC += dir << 2;
+			regPC -= 4;
+			regPC &= 0xF0000000;
+			regPC |= dir << 2;
 			break;
 		}
 	}
 
 	public void TipeR(int instruct) {
-		int target,b,a,funct,desp;
-		long aux = 0, aux2 = 0, aux3 = 0;
-		funct = instruct & 0x3F;
-		desp = (instruct & 0x7C0) >> 6;
-		target = (instruct & 0xF800) >> 11;
-		b = (instruct & 0x1F0000) >> 16;
-		a = (instruct & 0x3E00000) >> 21;
+		int rs,rt,rd,shamt,func;
+		long m1,m2,mt;
+		
+		func = getBitsFromInstruct(instruct, 0, 5, false);
+		shamt = getBitsFromInstruct(instruct, 6, 10, false);
+		rd = getBitsFromInstruct(instruct, 11, 15, false);
+		rt = getBitsFromInstruct(instruct, 16, 20, false);
+		rs = getBitsFromInstruct(instruct, 21, 25, false);
 
-		switch(funct){
+		switch(func){
+		
 		case 0x0://sll
-			setRegister(target, a << desp);
+			setRegister(rd, rt << shamt);
 			break;
 		case 0x2://srl
-			setRegister(target, a >>> desp);
+			setRegister(rd, rt >>> shamt);
 			break;
 		case 0x3://sra
-			setRegister(target, a >> desp);
+			setRegister(rd, rt >>> shamt);
 			break;
 		case 0x4://sllv
-			setRegister(target, a << b);
+			setRegister(rd, rt << rs);
 			break;
 		case 0x6://srlv
-			setRegister(target, a >>> b);
+			setRegister(rd, rt >> rs);
 			break;
 		case 0x7://srav
-			setRegister(target, a >> b);
+			setRegister(rd, rs >>> rt);
 			break;
+			
 		case 0x8://jr
-			regPC = getRegister(a);
+			if(getRegister(rs) == -1)return;
+			regPC = getRegister(rs);
 			break;
 		case 0x9://jalr
+			if(getRegister(rs) == -1)return;
 			setRegister(31, regPC);
-			regPC = getRegister(a);
+			regPC = getRegister(rs);
 			break;
+			
 		case 0x10://mfhi
-			setRegister(target, HI);
+			setRegister(rd, HI);
 			break;
 		case 0x11://mthi
-			HI = getRegister(target);
+			HI = getRegister(rd);
 			break;
 		case 0x12://mflo
-			setRegister(target, LO);
+			setRegister(rd, LO);
 			break;
 		case 0x13://mflo
-			LO = getRegister(target);
+			LO = getRegister(rd);
 			break;
+			
 		case 0x18://mult
-			aux = getRegister(b) * getRegister(a);
-			setRegister(LO, (int)(aux & -1));
-			setRegister(HI, (int)((aux >> 32) & -1));
+			m1 = getRegister(rs);
+			m2 = getRegister(rt);
+			mt = m1 * m2;
+			LO = (int)mt;
+			HI = (int)(mt >> 32);
 			break;
 		case 0x19://multu
-			aux2 |= getRegister(b);
-			aux3 |= getRegister(a);
-			aux = aux2 * aux3;
-			setRegister(LO, (int)(aux & -1));
-			setRegister(HI, (int)((aux >> 32) & -1));
+			m1 = getRegister(rs);
+			m2 = getRegister(rt);
+			m1 = (m1 << 32) >>> 32;
+			m2 = (m2 << 32) >>> 32;
+			mt = m1 * m2;
+			LO = (int)mt;
+			HI = (int)(mt >> 32);
 			break;
 		case 0x1a://div
-			LO = getRegister(a) / getRegister(b);
-			HI = getRegister(a) % getRegister(b);
+			if(getRegister(rt) != 0) LO = getRegister(rs) / getRegister(rt);
+			else LO = 0;
+			HI = getRegister(rs) % getRegister(rt);
 			break;
 		case 0x1b://divu
-			aux2 |= getRegister(a);
-			aux3 |= getRegister(b);
-			LO = (int) (aux2 / aux3);
-			HI = (int) (aux2 % aux3);
+			m1 = getRegister(rs);
+			m2 = getRegister(rt);
+			m1 = (m1 << 32) >>> 32;
+			m2 = (m2 << 32) >>> 32;
+			LO = (int) (m1 / m2);
+			HI = (int) (m1 % m2);
 			break;	
 		case 0x20://add
-			setRegister(target, getRegister(b) + getRegister(a));
+			setRegister(rd, getRegister(rt) + getRegister(rs));
 			break;
 		case 0x21://addu
-			aux |= getRegister(b);
-			aux2 |= getRegister(a);
-			setRegister(target , (int) (aux + aux2));
+			m1 = getRegister(rs);
+			m2 = getRegister(rt);
+			m1 = (m1 << 32) >>> 32;
+			m2 = (m2 << 32) >>> 32;
+			mt = m1 + m2;
+			setRegister(rd , (int) mt);
 			break;
 		case 0x22://sub
-			setRegister(target , getRegister(a) - getRegister(b));
+			setRegister(rd , getRegister(rs) - getRegister(rt));
 			break;
 		case 0x23://subu
-			aux |= getRegister(a);
-			aux2 |= getRegister(b);
-			setRegister(target , (int) (aux - aux2));
+			m1 = getRegister(rs);
+			m2 = getRegister(rt);
+			m1 = (m1 << 32) >>> 32;
+			m2 = (m2 << 32) >>> 32;
+			mt = m1 - m2;
+			setRegister(rd , (int) mt);
 			break;
 		case 0x24://and
-			setRegister(target , getRegister(b) & getRegister(a));
+			setRegister(rd , getRegister(rt) & getRegister(rs));
 			break;
 		case 0x25://or
-			setRegister(target , getRegister(b) | getRegister(a));
+			setRegister(rd , getRegister(rt) | getRegister(rs));
 			break;
 		case 0x26://xor
-			setRegister(target , getRegister(b) ^ getRegister(a));
+			setRegister(rd , getRegister(rt) ^ getRegister(rs));
 			break;
 		case 0x27://nor
-			setRegister(target , ~(getRegister(b) | getRegister(a)));
+			setRegister(rd , ~(getRegister(rt) | getRegister(rs)));
 			break;
+			
 		case 0x2a://slt
-			if(getRegister(a) < getRegister(b))
-				setRegister(target, 1);
+			if(getRegister(rs) < getRegister(rt))
+				setRegister(rd, 1);
 			else
-				setRegister(target, 0);
+				setRegister(rd, 0);
 			break;
 		case 0x2b://sltu
-			aux |= getRegister(a);
-			aux2 |= getRegister(b);
-			if(aux < aux2)
-				setRegister(target, 1);
+			m1 = getRegister(rs);
+			m2 = getRegister(rt);
+			m1 = (m1 << 32) >>> 32;
+			m2 = (m2 << 32) >>> 32;
+			if(m1 < m2)
+				setRegister(rd, 1);
 			else
-				setRegister(target, 0);
+				setRegister(rd, 0);
 			break;
 		}
 	}
@@ -388,12 +474,37 @@ public class CPU {
 
 	public void startPC() {
 		cpuCicles = 0;
-//		writeWord(0, 0x20040012);
-//		writeWord(4, 0x20020001);
-//		writeWord(8, 0x0000000c);
-//		writeWord(12, 0x00000000);
-//		writeWord(16, 0x2002000a);
-//		writeWord(20, 0x0000000c);
+		regPC = 4194304;
+		boolean load = true;
+		if(load){
+			loadOS();
+		}
+		int pos = 0x00000000;
+		writeWord(pos, 0x00000001);pos+=4;
+		writeWord(pos, 0x00000005);pos+=4;
+		writeWord(pos, 0x00000002);pos+=4;
+		writeWord(pos, 0x00000008);pos+=4;
+		writeWord(pos, 0x00000006);pos+=4;
+		writeWord(pos, 0x00000003);pos+=4;
+		writeWord(pos, 0x00000006);pos+=4;
+		writeWord(pos, 0x00000000);pos+=4;
+		writeWord(pos, 0x00000000);pos+=4;
+	}
+
+	private boolean loadOS() {
+		File archive;
+		FileInputStream stream = null;
+		try{
+			archive = new File("I:/Development/Compilador assembler/res/OperativeSystem.bin");
+			System.out.println(archive.getPath());
+			stream = new FileInputStream(archive);
+			stream.read(memory, 4194304, 8192);
+			stream.close();
+		}catch(IOException e){
+			e.printStackTrace();
+			return false;
+		}
+		return true;
 	}
 
 }
